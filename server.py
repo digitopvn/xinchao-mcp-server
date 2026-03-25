@@ -3,10 +3,13 @@
 import sys
 from typing import Any
 from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import TransportSecuritySettings
 from xinchao_api import api
 from config import PORT
 
-mcp = FastMCP("XinChaoMCP")
+mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
+    enable_dns_rebinding_protection=False
+))
 
 
 # --- Shows ---
