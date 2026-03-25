@@ -134,9 +134,13 @@ def get_post(post_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 def create_post(data: str) -> dict[str, Any]:
-    """Create a new post. Pass data as JSON: {title, slug, content, postCategoryId, ...}"""
+    """Create a new post. Pass data as JSON: {title, slug, content, postCategoryId, ...}. Author ID is auto-injected."""
     import json
-    return api("POST", "/admin/post", data=json.loads(data))
+    from config import AUTHOR_ID
+    post_data = json.loads(data)
+    if AUTHOR_ID and "authorId" not in post_data:
+        post_data["authorId"] = AUTHOR_ID
+    return api("POST", "/admin/post", data=post_data)
 
 
 @mcp.tool()
