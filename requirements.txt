@@ -2,4 +2,3 @@ mcp
 python-dotenv
 requests
 uvicorn
-starlette

@@ -200,11 +200,7 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "stdio"
     if mode == "sse":
         import uvicorn
-        from starlette.middleware import Middleware
-        from starlette.middleware.trustedhost import TrustedHostMiddleware
         app = mcp.sse_app()
-        # Allow all hosts for Render proxy
-        app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
-        uvicorn.run(app, host="0.0.0.0", port=PORT)
+        uvicorn.run(app, host="0.0.0.0", port=PORT, proxy_headers=True, forwarded_allow_ips="*")
     else:
         mcp.run(transport="stdio")
