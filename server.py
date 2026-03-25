@@ -199,6 +199,8 @@ def list_artists(page: str = "1", limit: str = "10", keyword: str = "") -> dict[
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "stdio"
     if mode == "sse":
-        mcp.run(transport="sse", host="0.0.0.0", port=PORT)
+        import uvicorn
+        app = mcp.sse_app()
+        uvicorn.run(app, host="0.0.0.0", port=PORT)
     else:
         mcp.run(transport="stdio")
