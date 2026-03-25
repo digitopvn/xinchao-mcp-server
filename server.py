@@ -203,7 +203,22 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "stdio"
     if mode == "sse":
         import uvicorn
+        from starlette.requests import Request as StarletteRequest
+        from starlette.responses import JSONResponse
         app = mcp.sse_app()
+
+        # Health check endpoint to verify config
+        async def health(request: StarletteRequest):
+            from config import ADMIN_EMAIL, API_URL
+            return JSONResponse({
+                "status": "ok",
+                "api_url": API_URL,
+                "email_configured": bool(ADMIN_EMAIL),
+                "password_configured": bool(ADMIN_PASSWORD),
+            })
+
+        from config import ADMIN_PASSWORD
+        app.add_route("/health", health)
         uvicorn.run(app, host="0.0.0.0", port=PORT, proxy_headers=True, forwarded_allow_ips="*")
     else:
         mcp.run(transport="stdio")
