@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 BUILD_DATE = "2026-03-26"
 
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
@@ -336,10 +336,9 @@ async def _download_image(url: str) -> dict[str, Any]:
 
 
 async def _upload_to_cdn(image_bytes: bytes, content_type: str, ext: str, filename_prefix: str = "upload") -> dict[str, Any]:
-    """Upload image to XinChao CDN using S3 pre-signed URL flow (same as web admin).
-    Step 1: Get S3 signature from /common/s3_signature
-    Step 2: Upload to S3 using pre-signed URL
-    Returns {data: {file_key: "...", content_type: "..."}} or {error}."""
+    """Upload image to XinChao CDN via /admin/filemanagers/single (same as web admin CKEditor).
+    POST multipart/form-data with field name 'upload'.
+    Returns {data: {url: "..."}} or {error}."""
     import httpx
     from config import API_URL
 
@@ -347,81 +346,64 @@ async def _upload_to_cdn(image_bytes: bytes, content_type: str, ext: str, filena
         token = await _get_token_for_upload()
         try:
             async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-                # Step 1: Get S3 pre-signed signature
-                sig_resp = await client.post(
-                    f"{API_URL}/common/s3_signature",
-                    json={"content_type": content_type, "resource": "blogs"},
+                filename = f"{filename_prefix}.{ext}"
+                # Field name must be 'upload' — same as CKEditor SimpleUploadAdapter in CMS frontend
+                files = {"upload": (filename, image_bytes, content_type)}
+
+                resp = await client.post(
+                    f"{API_URL}/admin/filemanagers/single",
+                    files=files,
                     headers={"Authorization": f"Bearer {token}"},
                 )
-                if sig_resp.status_code == 401 and attempt == 0:
+                logger.info("CDN upload response: status=%s, body=%s", resp.status_code, resp.text[:500])
+
+                if resp.status_code == 401 and attempt == 0:
                     from xinchao_api import _token_cache
                     _token_cache["token"] = None
-                    logger.info("S3 signature got 401, re-login and retry...")
+                    logger.info("Upload got 401, re-login and retry...")
                     continue
-                if sig_resp.status_code >= 400:
-                    return {"error": f"S3 signature failed (status={sig_resp.status_code}): {sig_resp.text[:500]}"}
+                if resp.status_code >= 400:
+                    return {"error": f"Upload failed (status={resp.status_code}): {resp.text[:500]}"}
 
-                sig_data = sig_resp.json()
-                logger.info("S3 signature response: %s", sig_data)
-
-                # Extract signature fields — try nested under "data" or "metadata" or flat
-                sig = sig_data.get("data") or sig_data.get("metadata") or sig_data
-                s3_url = sig.get("url")
-                file_key = sig.get("key")
-                if not s3_url or not file_key:
-                    return {"error": f"S3 signature missing url/key: {sig_data}"}
-
-                # Step 2: Upload to S3 with pre-signed fields
-                form_data = {}
-                # Add all S3 policy fields
-                for k in ("x-amz-credential", "x-amz-algorithm", "x-amz-date",
-                          "x-amz-signature", "policy", "acl", "success_action_status",
-                          "Content-Type", "content-type"):
-                    if k in sig:
-                        form_data[k] = sig[k]
-                form_data["key"] = file_key
-                form_data["Content-Type"] = content_type
-
-                filename = f"{filename_prefix}.{ext}"
-                # Build multipart: fields first, file last (S3 requirement)
-                files_payload = {k: (None, v) for k, v in form_data.items()}
-                files_payload["file"] = (filename, image_bytes, content_type)
-
-                s3_resp = await client.post(s3_url, files=files_payload)
-                logger.info("S3 upload response: status=%s, body=%s", s3_resp.status_code, s3_resp.text[:500])
-
-                # S3 returns 200-204 on success
-                if s3_resp.status_code < 300:
-                    return {
-                        "data": {
-                            "file_key": file_key,
-                            "content_type": content_type,
-                        }
-                    }
-                else:
-                    return {"error": f"S3 upload failed (status={s3_resp.status_code}): {s3_resp.text[:500]}"}
+                resp_data = resp.json()
+                return {"data": resp_data}
 
         except httpx.TimeoutException:
-            return {"error": "Timeout during S3 upload"}
+            return {"error": "Timeout during CDN upload"}
         except httpx.HTTPError as e:
-            return {"error": f"HTTP error during S3 upload: {e}"}
+            return {"error": f"HTTP error during CDN upload: {e}"}
     return {"error": "Upload failed after retries"}
 
 
 def _extract_cdn_path(result: dict) -> str | None:
-    """Extract CDN path from upload response. S3 flow returns {data: {file_key}}."""
-    # S3 pre-signed upload returns file_key
-    d = result.get("data", {})
-    if isinstance(d, dict):
-        for key in ("file_key", "filePath", "path", "key", "url", "file", "src", "fileUrl", "file_path", "file_url"):
-            val = d.get(key)
-            if val and isinstance(val, str):
-                return val
+    """Extract CDN path from /admin/filemanagers/single response.
+    CKEditor SimpleUploadAdapter expects {url: "..."} or {urls: {default: "..."}}.
+    Backend may also wrap in {metadata: {...}} or {data: {...}}."""
+    # Check common response keys at all nesting levels
+    search_keys = ("url", "filePath", "path", "file_key", "key", "file", "src", "fileUrl", "file_path", "file_url")
+
+    # Try nested: data.X, metadata.X
+    for wrapper in ("data", "metadata"):
+        d = result.get(wrapper)
+        if isinstance(d, dict):
+            for key in search_keys:
+                val = d.get(key)
+                if val and isinstance(val, str):
+                    return val
+            # CKEditor format: {urls: {default: "..."}}
+            urls = d.get("urls")
+            if isinstance(urls, dict) and urls.get("default"):
+                return urls["default"]
+
     # Try flat
-    for key in ("file_key", "filePath", "path", "key", "url", "file", "src", "fileUrl", "file_path", "file_url"):
+    for key in search_keys:
         val = result.get(key)
         if val and isinstance(val, str):
             return val
+    # CKEditor format at top level
+    urls = result.get("urls")
+    if isinstance(urls, dict) and urls.get("default"):
+        return urls["default"]
     return None
 
 
