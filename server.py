@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 BUILD_DATE = "2026-03-26"
 
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
@@ -246,13 +246,31 @@ async def create_post(data: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def update_post(post_id: str, data: str) -> dict[str, Any]:
-    """Update a post by ID. Pass data as JSON string with fields to update.
+    """Update a post by ID. Pass data as JSON string with ONLY the fields you want to change.
+    Unspecified fields are preserved (fetched from existing post before updating).
     External URLs in image fields are auto-uploaded to CDN before updating."""
     import json
-    post_data = json.loads(data)
+    new_data = json.loads(data)
     # Auto-upload external URLs in image fields to CDN
-    post_data = await _auto_upload_image_fields(post_data)
-    return await api("PUT", f"/admin/post/{post_id}", data=post_data)
+    new_data = await _auto_upload_image_fields(new_data)
+
+    # Fetch existing post to preserve fields not being updated
+    existing = await api("GET", f"/admin/post/{post_id}")
+    existing_data = {}
+    if isinstance(existing, dict):
+        existing_data = existing.get("metadata") or existing.get("data") or existing
+        # If response is wrapped in another layer
+        if isinstance(existing_data, dict) and "metadata" in existing_data:
+            existing_data = existing_data["metadata"]
+
+    # Remove non-updatable / meta fields from existing data
+    _SKIP_KEYS = {"_id", "id", "createdAt", "updatedAt", "__v", "slug", "post_category"}
+    merged = {k: v for k, v in existing_data.items() if k not in _SKIP_KEYS}
+    # Overlay new fields on top of existing
+    merged.update(new_data)
+
+    logger.info("update_post #%s: merging %d existing + %d new fields", post_id, len(existing_data), len(new_data))
+    return await api("PUT", f"/admin/post/{post_id}", data=merged)
 
 
 # @mcp.tool()
@@ -453,7 +471,8 @@ async def upload_image(image_url: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def update_post_images(post_id: str, image_url: str, field: str = "image") -> dict[str, Any]:
-    """Upload an image to CDN via S3, then update the post's image field.
+    """Upload an image to CDN, then update the post's image field.
+    Preserves all existing post data (only the specified image field is changed).
     Args:
         post_id: Post ID to update
         image_url: Public URL of the image to download and upload to CDN
@@ -463,16 +482,17 @@ async def update_post_images(post_id: str, image_url: str, field: str = "image")
     dl = await _download_image(image_url)
     if "error" in dl:
         return dl
-    # Step 2: Upload to CDN via S3 pre-signed URL
+    # Step 2: Upload to CDN
     result = await _upload_to_cdn(dl["content"], dl["content_type"], dl["ext"], filename_prefix=field)
     if "error" in result:
         return result
     cdn_path = _extract_cdn_path(result)
     if not cdn_path:
         return {"error": f"Upload succeeded but no path in response: {result}"}
-    # Step 3: Update post with CDN path
+    # Step 3: Update post with CDN path — use update_post to preserve existing data
+    import json
     logger.info("Updating post %s field %s -> %s", post_id, field, cdn_path)
-    return await api("PUT", f"/admin/post/{post_id}", data={field: cdn_path})
+    return await update_post(post_id, json.dumps({field: cdn_path}))
 
 
 # --- Customers & Artists ---
