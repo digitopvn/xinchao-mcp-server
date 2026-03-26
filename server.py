@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
-VERSION = "1.6.0"
+VERSION = "2.0.0"
 BUILD_DATE = "2026-03-26"
 
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
@@ -495,7 +495,7 @@ async def update_post_images(post_id: str, image_url: str, field: str = "image")
     return await update_post(post_id, json.dumps({field: cdn_path}))
 
 
-# --- Customers & Artists ---
+# --- Customers ---
 
 @mcp.tool()
 async def list_customers(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
@@ -506,11 +506,566 @@ async def list_customers(page: str = "1", limit: str = "10", keyword: str = "") 
 
 
 @mcp.tool()
+async def get_customer(customer_id: str) -> dict[str, Any]:
+    """Get details of a specific customer by ID."""
+    return await api("GET", f"/admin/customer/{customer_id}")
+
+
+@mcp.tool()
+async def create_customer(data: str) -> dict[str, Any]:
+    """Create a new customer. Pass data as JSON: {name, email, phone, address, ...}"""
+    import json
+    return await api("POST", "/admin/customer", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_customer(customer_id: str, data: str) -> dict[str, Any]:
+    """Update a customer by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/customer/{customer_id}", data=json.loads(data))
+
+
+# --- Artists ---
+
+@mcp.tool()
 async def list_artists(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
     """List all artists with pagination and search."""
     params = {"page": page, "limit": limit}
     if keyword: params["keyword"] = keyword
     return await api("GET", "/admin/artist", params=params)
+
+
+@mcp.tool()
+async def get_artist(artist_id: str) -> dict[str, Any]:
+    """Get details of a specific artist by ID."""
+    return await api("GET", f"/admin/artist/{artist_id}")
+
+
+@mcp.tool()
+async def create_artist(data: str) -> dict[str, Any]:
+    """Create a new artist. Pass data as JSON: {name, description, image, ...}"""
+    import json
+    return await api("POST", "/admin/artist", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_artist(artist_id: str, data: str) -> dict[str, Any]:
+    """Update an artist by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/artist/{artist_id}", data=json.loads(data))
+
+
+# --- Tags ---
+
+@mcp.tool()
+async def list_tags(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all tags with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/tag", params=params)
+
+
+@mcp.tool()
+async def get_tag(tag_id: str) -> dict[str, Any]:
+    """Get details of a specific tag by ID."""
+    return await api("GET", f"/admin/tag/{tag_id}")
+
+
+@mcp.tool()
+async def create_tag(data: str) -> dict[str, Any]:
+    """Create a new tag. Pass data as JSON: {name, slug, ...}"""
+    import json
+    return await api("POST", "/admin/tag", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_tag(tag_id: str, data: str) -> dict[str, Any]:
+    """Update a tag by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/tag/{tag_id}", data=json.loads(data))
+
+
+# --- Categories (Product/General) ---
+
+@mcp.tool()
+async def list_categories(page: str = "1", limit: str = "10", keyword: str = "", get_all: str = "", parent: str = "") -> dict[str, Any]:
+    """List categories. Use get_all='true' and parent='true' to get all parent categories (for dropdowns)."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    if get_all: params["get"] = get_all
+    if parent: params["parent"] = parent
+    return await api("GET", "/admin/categories", params=params)
+
+
+@mcp.tool()
+async def get_category(category_id: str) -> dict[str, Any]:
+    """Get details of a specific category by ID."""
+    return await api("GET", f"/admin/categories/{category_id}")
+
+
+@mcp.tool()
+async def create_category(data: str) -> dict[str, Any]:
+    """Create a new category. Pass data as JSON: {name, slug, parent, image, ...}"""
+    import json
+    return await api("POST", "/admin/categories", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_category(category_id: str, data: str) -> dict[str, Any]:
+    """Update a category by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/categories/{category_id}", data=json.loads(data))
+
+
+# --- Post Categories ---
+
+@mcp.tool()
+async def get_post_category(category_id: str) -> dict[str, Any]:
+    """Get details of a specific post category by ID."""
+    return await api("GET", f"/admin/post-category/{category_id}")
+
+
+@mcp.tool()
+async def create_post_category(data: str) -> dict[str, Any]:
+    """Create a new post category. Pass data as JSON: {name, slug, ...}"""
+    import json
+    return await api("POST", "/admin/post-category", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_post_category(category_id: str, data: str) -> dict[str, Any]:
+    """Update a post category by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/post-category/{category_id}", data=json.loads(data))
+
+
+# --- Show Categories ---
+
+@mcp.tool()
+async def list_show_categories(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all show categories with pagination."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/show-category", params=params)
+
+
+@mcp.tool()
+async def get_show_category(category_id: str) -> dict[str, Any]:
+    """Get details of a specific show category by ID."""
+    return await api("GET", f"/admin/show-category/{category_id}")
+
+
+@mcp.tool()
+async def create_show_category(data: str) -> dict[str, Any]:
+    """Create a new show category. Pass data as JSON: {name, slug, ...}"""
+    import json
+    return await api("POST", "/admin/show-category", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_show_category(category_id: str, data: str) -> dict[str, Any]:
+    """Update a show category by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/show-category/{category_id}", data=json.loads(data))
+
+
+# --- Clips ---
+
+@mcp.tool()
+async def list_clips(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all clips with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/clip", params=params)
+
+
+@mcp.tool()
+async def get_clip(clip_id: str) -> dict[str, Any]:
+    """Get details of a specific clip by ID."""
+    return await api("GET", f"/admin/clip/{clip_id}")
+
+
+@mcp.tool()
+async def create_clip(data: str) -> dict[str, Any]:
+    """Create a new clip. Pass data as JSON: {title, url, description, ...}"""
+    import json
+    return await api("POST", "/admin/clip", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_clip(clip_id: str, data: str) -> dict[str, Any]:
+    """Update a clip by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/clip/{clip_id}", data=json.loads(data))
+
+
+# --- Galleries ---
+
+@mcp.tool()
+async def list_galleries(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all galleries with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/gallery", params=params)
+
+
+@mcp.tool()
+async def get_gallery(gallery_id: str) -> dict[str, Any]:
+    """Get details of a specific gallery by ID."""
+    return await api("GET", f"/admin/gallery/{gallery_id}")
+
+
+@mcp.tool()
+async def create_gallery(data: str) -> dict[str, Any]:
+    """Create a new gallery. Pass data as JSON: {title, images, ...}"""
+    import json
+    return await api("POST", "/admin/gallery", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_gallery(gallery_id: str, data: str) -> dict[str, Any]:
+    """Update a gallery by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/gallery/{gallery_id}", data=json.loads(data))
+
+
+# --- FAQs ---
+
+@mcp.tool()
+async def list_faqs(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all FAQs with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/faq", params=params)
+
+
+@mcp.tool()
+async def get_faq(faq_id: str) -> dict[str, Any]:
+    """Get details of a specific FAQ by ID."""
+    return await api("GET", f"/admin/faq/{faq_id}")
+
+
+@mcp.tool()
+async def create_faq(data: str) -> dict[str, Any]:
+    """Create a new FAQ. Pass data as JSON: {question, answer, ...}"""
+    import json
+    return await api("POST", "/admin/faq", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_faq(faq_id: str, data: str) -> dict[str, Any]:
+    """Update a FAQ by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/faq/{faq_id}", data=json.loads(data))
+
+
+# --- Policies ---
+
+@mcp.tool()
+async def list_policies(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all policies with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/policy", params=params)
+
+
+@mcp.tool()
+async def get_policy(policy_id: str) -> dict[str, Any]:
+    """Get details of a specific policy by ID."""
+    return await api("GET", f"/admin/policy/{policy_id}")
+
+
+@mcp.tool()
+async def create_policy(data: str) -> dict[str, Any]:
+    """Create a new policy. Pass data as JSON: {title, content, ...}"""
+    import json
+    return await api("POST", "/admin/policy", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_policy(policy_id: str, data: str) -> dict[str, Any]:
+    """Update a policy by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/policy/{policy_id}", data=json.loads(data))
+
+
+# --- Products ---
+
+@mcp.tool()
+async def list_products(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all products with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/product", params=params)
+
+
+@mcp.tool()
+async def get_product(product_id: str) -> dict[str, Any]:
+    """Get details of a specific product by ID."""
+    return await api("GET", f"/admin/product/{product_id}")
+
+
+@mcp.tool()
+async def create_product(data: str) -> dict[str, Any]:
+    """Create a new product. Pass data as JSON: {name, price, categoryId, description, image, ...}"""
+    import json
+    return await api("POST", "/admin/product", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_product(product_id: str, data: str) -> dict[str, Any]:
+    """Update a product by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/product/{product_id}", data=json.loads(data))
+
+
+# --- Coupons ---
+
+@mcp.tool()
+async def list_coupons(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all coupons with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/coupon", params=params)
+
+
+@mcp.tool()
+async def get_coupon(coupon_id: str) -> dict[str, Any]:
+    """Get details of a specific coupon by ID."""
+    return await api("GET", f"/admin/coupon/{coupon_id}")
+
+
+@mcp.tool()
+async def create_coupon(data: str) -> dict[str, Any]:
+    """Create a new coupon. Pass data as JSON: {code, discount, showId, ...}"""
+    import json
+    return await api("POST", "/admin/coupon", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_coupon(coupon_id: str, data: str) -> dict[str, Any]:
+    """Update a coupon by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/coupon/{coupon_id}", data=json.loads(data))
+
+
+# --- Contacts ---
+
+@mcp.tool()
+async def list_contacts(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all contacts/messages with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/contact", params=params)
+
+
+@mcp.tool()
+async def get_contact(contact_id: str) -> dict[str, Any]:
+    """Get details of a specific contact by ID."""
+    return await api("GET", f"/admin/contact/{contact_id}")
+
+
+@mcp.tool()
+async def update_contact(contact_id: str, data: str) -> dict[str, Any]:
+    """Update a contact by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/contact/{contact_id}", data=json.loads(data))
+
+
+# --- Settings ---
+
+@mcp.tool()
+async def get_setting(setting_id: str) -> dict[str, Any]:
+    """Get a specific setting by ID."""
+    return await api("GET", f"/admin/setting/{setting_id}")
+
+
+@mcp.tool()
+async def update_setting(setting_id: str, data: str) -> dict[str, Any]:
+    """Update a setting by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/setting/{setting_id}", data=json.loads(data))
+
+
+# --- Bookings ---
+
+@mcp.tool()
+async def list_bookings(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all bookings with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/booking", params=params)
+
+
+@mcp.tool()
+async def get_booking(booking_id: str) -> dict[str, Any]:
+    """Get details of a specific booking by ID."""
+    return await api("GET", f"/admin/booking/{booking_id}")
+
+
+@mcp.tool()
+async def create_booking(data: str) -> dict[str, Any]:
+    """Create a new booking. Pass data as JSON."""
+    import json
+    return await api("POST", "/admin/booking", data=json.loads(data))
+
+
+# --- Groups ---
+
+@mcp.tool()
+async def list_groups(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all user groups with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/group", params=params)
+
+
+@mcp.tool()
+async def get_group(group_id: str) -> dict[str, Any]:
+    """Get details of a specific group by ID."""
+    return await api("GET", f"/admin/group/{group_id}")
+
+
+# --- Users/Staff ---
+
+@mcp.tool()
+async def list_users(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all users/staff with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/users", params=params)
+
+
+@mcp.tool()
+async def get_user(user_id: str) -> dict[str, Any]:
+    """Get details of a specific user by ID."""
+    return await api("GET", f"/admin/users/{user_id}")
+
+
+# --- Slots ---
+
+@mcp.tool()
+async def list_slots(page: str = "1", limit: str = "10", show_id: str = "") -> dict[str, Any]:
+    """List all slots with pagination. Filter by show_id."""
+    params = {"page": page, "limit": limit}
+    if show_id: params["showId"] = show_id
+    return await api("GET", "/admin/slot", params=params)
+
+
+@mcp.tool()
+async def get_slot(slot_id: str) -> dict[str, Any]:
+    """Get details of a specific slot by ID."""
+    return await api("GET", f"/admin/slot/{slot_id}")
+
+
+@mcp.tool()
+async def update_slot(slot_id: str, data: str) -> dict[str, Any]:
+    """Update a slot by ID. Pass data as JSON with fields to update."""
+    import json
+    return await api("PUT", f"/admin/slot/{slot_id}", data=json.loads(data))
+
+
+# --- Orders Third Party ---
+
+@mcp.tool()
+async def list_orders_third_party(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all third-party orders with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/order-third-party", params=params)
+
+
+@mcp.tool()
+async def get_orders_third_party_stats() -> dict[str, Any]:
+    """Get third-party order statistics."""
+    return await api("GET", "/admin/order-third-party/stats")
+
+
+# --- Check-in ---
+
+@mcp.tool()
+async def list_checkins(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all check-in histories with pagination."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/checkin", params=params)
+
+
+@mcp.tool()
+async def list_checkins_third_party(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all third-party check-in histories with pagination."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/order-third-party/checkin", params=params)
+
+
+# --- Tracking ---
+
+@mcp.tool()
+async def list_tracking(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all order tracking records with pagination."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/tracking", params=params)
+
+
+@mcp.tool()
+async def get_tracking(tracking_id: str) -> dict[str, Any]:
+    """Get details of a specific tracking record by ID."""
+    return await api("GET", f"/admin/tracking/{tracking_id}")
+
+
+# --- Affiliate ---
+
+@mcp.tool()
+async def list_affiliate_histories(page: str = "1", limit: str = "10") -> dict[str, Any]:
+    """List affiliate commission histories with pagination."""
+    params = {"page": page, "limit": limit}
+    return await api("GET", "/admin/affiliate/histories", params=params)
+
+
+@mcp.tool()
+async def get_affiliate_statistics(customer_id: str = "", from_date: str = "", to_date: str = "") -> dict[str, Any]:
+    """Get affiliate statistics. Optionally filter by customerId, fromDate, toDate."""
+    params: dict[str, str] = {}
+    if customer_id: params["customerId"] = customer_id
+    if from_date: params["fromDate"] = from_date
+    if to_date: params["toDate"] = to_date
+    return await api("GET", "/admin/affiliate/statistics", params=params)
+
+
+@mcp.tool()
+async def list_withdraw_requests(page: str = "1", limit: str = "10") -> dict[str, Any]:
+    """List affiliate withdraw requests with pagination."""
+    params = {"page": page, "limit": limit}
+    return await api("GET", "/admin/affiliate/withdraw-requests", params=params)
+
+
+@mcp.tool()
+async def change_withdraw_request_status(request_id: str, data: str) -> dict[str, Any]:
+    """Change the status of an affiliate withdraw request. Pass data as JSON: {status: '...'}"""
+    import json
+    return await api("PUT", f"/admin/affiliate/withdraw-request/{request_id}/status", data=json.loads(data))
+
+
+# --- Zones (Location) ---
+
+@mcp.tool()
+async def list_provinces() -> dict[str, Any]:
+    """List all provinces/zones."""
+    return await api("GET", "/admin/zone-provinces", params={"limit": "100", "page": "1"})
+
+
+@mcp.tool()
+async def list_districts(province_id: str) -> dict[str, Any]:
+    """List all districts in a province. Provide the province ID."""
+    return await api("GET", "/admin/zone-districts", params={"get": "true", "zoneProvince": province_id})
+
+
+@mcp.tool()
+async def list_wards(district_id: str) -> dict[str, Any]:
+    """List all wards in a district. Provide the district ID."""
+    return await api("GET", "/admin/zone-wards", params={"get": "true", "zoneDistrict": district_id})
 
 
 # --- Entry point ---
