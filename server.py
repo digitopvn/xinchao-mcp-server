@@ -192,7 +192,8 @@ async def create_post(data: str) -> dict[str, Any]:
        - thumbMaster: Thumbnail lớn/master desktop (không bắt buộc)
        - thumbMasterMb: Thumbnail lớn/master mobile (không bắt buộc)
        - meta_image: Ảnh SEO/OG khi share link (không bắt buộc)
-       Use upload_image tool to upload from URL first, then use returned path.
+       For workspace files: pass path directly (e.g. /app/workspace/.../image.jpg)
+       For external images: use upload_image tool with public URL first, then use returned path.
 
     7. SEO — ask user for each (không bắt buộc, bỏ qua nếu không cần):
        - meta_title: Tiêu đề SEO (không bắt buộc)
@@ -211,7 +212,7 @@ async def create_post(data: str) -> dict[str, Any]:
     - status: only 'DRAFT' or 'PUBLISHED' (uppercase). Defaults to 'DRAFT'. Only set 'PUBLISHED' when user explicitly asks to publish.
     - slug: auto-generated from title_vn if not provided. Do NOT ask user for slug.
     - author_id: auto-injected from AUTHOR_ID env if not provided. Do NOT ask user for author_id.
-    - image fields: expect URL/path strings (use upload_image tool first to upload images).
+    - image fields: accept workspace file paths (e.g. /app/workspace/...) OR public URLs. For workspace files, pass the path directly — no upload needed.
     - Do NOT ask user for fields that are auto-generated or have defaults."""
     import json
     import re
