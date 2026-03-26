@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 BUILD_DATE = "2026-03-26"
 
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
@@ -336,46 +336,89 @@ async def _download_image(url: str) -> dict[str, Any]:
 
 
 async def _upload_to_cdn(image_bytes: bytes, content_type: str, ext: str, filename_prefix: str = "upload") -> dict[str, Any]:
-    """Upload image bytes to XinChao CDN via /admin/filemanagers/single.
-    Returns API response with uploaded path, or {error}."""
+    """Upload image to XinChao CDN using S3 pre-signed URL flow (same as web admin).
+    Step 1: Get S3 signature from /common/s3_signature
+    Step 2: Upload to S3 using pre-signed URL
+    Returns {data: {file_key: "...", content_type: "..."}} or {error}."""
     import httpx
     from config import API_URL
-    filename = f"{filename_prefix}.{ext}"
+
     for attempt in range(2):
         token = await _get_token_for_upload()
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(
-                    f"{API_URL}/admin/filemanagers/single",
+            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                # Step 1: Get S3 pre-signed signature
+                sig_resp = await client.post(
+                    f"{API_URL}/common/s3_signature",
+                    json={"content_type": content_type, "resource": "blogs"},
                     headers={"Authorization": f"Bearer {token}"},
-                    files={"file": (filename, image_bytes, content_type)},
                 )
-            if resp.status_code == 401 and attempt == 0:
-                from xinchao_api import _token_cache
-                _token_cache["token"] = None
-                logger.info("Upload got 401, re-login and retry...")
-                continue
-            if resp.status_code >= 400:
-                return {"error": f"CDN upload failed (status={resp.status_code}): {resp.text[:500]}"}
-            return resp.json()
+                if sig_resp.status_code == 401 and attempt == 0:
+                    from xinchao_api import _token_cache
+                    _token_cache["token"] = None
+                    logger.info("S3 signature got 401, re-login and retry...")
+                    continue
+                if sig_resp.status_code >= 400:
+                    return {"error": f"S3 signature failed (status={sig_resp.status_code}): {sig_resp.text[:500]}"}
+
+                sig_data = sig_resp.json()
+                logger.info("S3 signature response: %s", sig_data)
+
+                # Extract signature fields — try nested under "data" or "metadata" or flat
+                sig = sig_data.get("data") or sig_data.get("metadata") or sig_data
+                s3_url = sig.get("url")
+                file_key = sig.get("key")
+                if not s3_url or not file_key:
+                    return {"error": f"S3 signature missing url/key: {sig_data}"}
+
+                # Step 2: Upload to S3 with pre-signed fields
+                form_data = {}
+                # Add all S3 policy fields
+                for k in ("x-amz-credential", "x-amz-algorithm", "x-amz-date",
+                          "x-amz-signature", "policy", "acl", "success_action_status",
+                          "Content-Type", "content-type"):
+                    if k in sig:
+                        form_data[k] = sig[k]
+                form_data["key"] = file_key
+                form_data["Content-Type"] = content_type
+
+                filename = f"{filename_prefix}.{ext}"
+                # Build multipart: fields first, file last (S3 requirement)
+                files_payload = {k: (None, v) for k, v in form_data.items()}
+                files_payload["file"] = (filename, image_bytes, content_type)
+
+                s3_resp = await client.post(s3_url, files=files_payload)
+                logger.info("S3 upload response: status=%s, body=%s", s3_resp.status_code, s3_resp.text[:500])
+
+                # S3 returns 200-204 on success
+                if s3_resp.status_code < 300:
+                    return {
+                        "data": {
+                            "file_key": file_key,
+                            "content_type": content_type,
+                        }
+                    }
+                else:
+                    return {"error": f"S3 upload failed (status={s3_resp.status_code}): {s3_resp.text[:500]}"}
+
         except httpx.TimeoutException:
-            return {"error": "Timeout uploading to CDN"}
+            return {"error": "Timeout during S3 upload"}
         except httpx.HTTPError as e:
-            return {"error": f"HTTP error uploading to CDN: {e}"}
+            return {"error": f"HTTP error during S3 upload: {e}"}
     return {"error": "Upload failed after retries"}
 
 
 def _extract_cdn_path(result: dict) -> str | None:
-    """Extract CDN path from upload API response, trying all known key patterns."""
-    # Try nested: {data: {filePath, path, url, file, ...}}
+    """Extract CDN path from upload response. S3 flow returns {data: {file_key}}."""
+    # S3 pre-signed upload returns file_key
     d = result.get("data", {})
     if isinstance(d, dict):
-        for key in ("filePath", "path", "url", "file", "src", "fileUrl", "file_path", "file_url"):
+        for key in ("file_key", "filePath", "path", "key", "url", "file", "src", "fileUrl", "file_path", "file_url"):
             val = d.get(key)
             if val and isinstance(val, str):
                 return val
-    # Try flat: {filePath, path, url, ...}
-    for key in ("filePath", "path", "url", "file", "src", "fileUrl", "file_path", "file_url"):
+    # Try flat
+    for key in ("file_key", "filePath", "path", "key", "url", "file", "src", "fileUrl", "file_path", "file_url"):
         val = result.get(key)
         if val and isinstance(val, str):
             return val
@@ -428,41 +471,26 @@ async def upload_image(image_url: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def update_post_images(post_id: str, image_url: str, field: str = "image") -> dict[str, Any]:
-    """Upload an image and attach it to a post via multipart form update.
-    API uploads to Cloudflare R2 automatically.
+    """Upload an image to CDN via S3, then update the post's image field.
     Args:
         post_id: Post ID to update
-        image_url: Public URL of the image to download and attach
+        image_url: Public URL of the image to download and upload to CDN
         field: Image field name (image, imageMb, thumbImage, thumbImageMb, thumbMaster, thumbMasterMb, meta_image)
     Returns updated post data."""
-    import httpx
-    from config import API_URL
+    # Step 1: Download image
     dl = await _download_image(image_url)
     if "error" in dl:
         return dl
-    filename = f"{field}.{dl['ext']}"
-    for attempt in range(2):
-        token = await _get_token_for_upload()
-        try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.put(
-                    f"{API_URL}/admin/post/{post_id}",
-                    headers={"Authorization": f"Bearer {token}"},
-                    files={field: (filename, dl["content"], dl["content_type"])},
-                )
-            if resp.status_code == 401 and attempt == 0:
-                from xinchao_api import _token_cache
-                _token_cache["token"] = None
-                logger.info("update_post_images got 401, re-login and retry...")
-                continue
-            if resp.status_code >= 400:
-                return {"error": resp.status_code, "message": resp.text[:500]}
-            return resp.json()
-        except httpx.TimeoutException:
-            return {"error": "Timeout uploading to post"}
-        except httpx.HTTPError as e:
-            return {"error": f"HTTP error: {e}"}
-    return {"error": "Upload failed after retries"}
+    # Step 2: Upload to CDN via S3 pre-signed URL
+    result = await _upload_to_cdn(dl["content"], dl["content_type"], dl["ext"], filename_prefix=field)
+    if "error" in result:
+        return result
+    cdn_path = _extract_cdn_path(result)
+    if not cdn_path:
+        return {"error": f"Upload succeeded but no path in response: {result}"}
+    # Step 3: Update post with CDN path
+    logger.info("Updating post %s field %s -> %s", post_id, field, cdn_path)
+    return await api("PUT", f"/admin/post/{post_id}", data={field: cdn_path})
 
 
 # --- Customers & Artists ---
