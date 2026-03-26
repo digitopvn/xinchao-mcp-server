@@ -38,14 +38,12 @@ async def get_show(show_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def create_show(name: str, slug: str = "", show_day: str = "", description: str = "", status: str = "") -> dict[str, Any]:
-    """Create a new show on XinChao platform."""
-    data = {"name": name}
-    if slug: data["slug"] = slug
-    if show_day: data["showDay"] = show_day
-    if description: data["description"] = description
-    if status: data["status"] = status
-    return await api("POST", "/admin/show", data=data)
+async def create_show(data: str) -> dict[str, Any]:
+    """Create a new show. Pass data as JSON with fields:
+    Required: title_vn, title_en, slug, categoryId (number), sortOrder (number), status (number), showDay, currency.
+    Optional: image, shortDescription_vn, shortDescription_en, detailContent_vn, detailContent_en, location, priceRange, stageId, isFree, isShowHome, metaTitle, metaDescription."""
+    import json
+    return await api("POST", "/admin/show", data=json.loads(data))
 
 
 @mcp.tool()
@@ -80,7 +78,9 @@ async def get_ticket(ticket_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def create_ticket(data: str) -> dict[str, Any]:
-    """Create a new ticket. Pass data as JSON string: {name, price, showId, quantity, ...}"""
+    """Create a new ticket. Pass data as JSON with fields:
+    Required: name, type, price, showId (number), active ('true'/'false').
+    Optional: sortOrder, color, description_vn, description_en, image, salePrices."""
     import json
     return await api("POST", "/admin/ticket", data=json.loads(data))
 
@@ -142,12 +142,15 @@ async def get_post(post_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def create_post(data: str) -> dict[str, Any]:
-    """Create a new post. Pass data as JSON: {title, slug, content, postCategoryId, ...}. Author ID is auto-injected."""
+    """Create a new post. Pass data as JSON with snake_case fields:
+    Required: title_vn, title_en, slug, description_vn, description_en, content_vn, content_en, status (string), post_category_id (number), author_id (number).
+    Optional: image, publishedAt, order_no, tags, meta_title, meta_description.
+    author_id is auto-injected from AUTHOR_ID env if not provided."""
     import json
     from config import AUTHOR_ID
     post_data = json.loads(data)
-    if AUTHOR_ID and "authorId" not in post_data:
-        post_data["authorId"] = AUTHOR_ID
+    if AUTHOR_ID and "author_id" not in post_data:
+        post_data["author_id"] = int(AUTHOR_ID)
     return await api("POST", "/admin/post", data=post_data)
 
 
