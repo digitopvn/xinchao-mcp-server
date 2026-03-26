@@ -143,13 +143,68 @@ async def get_post(post_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def create_post(data: str) -> dict[str, Any]:
-    """Create a new post. Pass data as JSON with snake_case fields:
-    Required: title_vn, title_en, slug, description_vn, description_en, content_vn, content_en, status (string), post_category_id (number), author_id (number).
-    Optional: image, publishedAt, order_no, tags, meta_title, meta_description.
-    author_id is auto-injected from AUTHOR_ID env if not provided."""
+    """Create a new post on XinChao platform.
+
+    STEP-BY-STEP guide — ask user for each section:
+
+    1. TITLE (required):
+       - title_vn: Tiêu đề tiếng Việt
+       - title_en: Title in English
+       - titleNon_vn: Tiêu đề phụ VN (optional)
+       - titleNon_en: Sub-title EN (optional)
+
+    2. SLUG (auto-generated):
+       - slug: Auto-generate from title_vn (lowercase, remove diacritics, replace spaces with hyphens)
+
+    3. DESCRIPTION (required):
+       - description_vn: Mô tả ngắn VN (hiện ở danh sách bài viết)
+       - description_en: Short description EN
+
+    4. CONTENT (required):
+       - content_vn: Nội dung đầy đủ VN (HTML supported)
+       - content_en: Full content EN (HTML supported)
+
+    5. CATEGORY (required):
+       - post_category_id: number — use list_post_categories to find ID
+
+    6. IMAGES (optional — use upload_image tool first to get paths):
+       - image: Ảnh banner chính desktop
+       - imageMb: Ảnh banner mobile
+       - thumbImage: Thumbnail nhỏ desktop
+       - thumbImageMb: Thumbnail nhỏ mobile
+       - thumbMaster: Thumbnail lớn/master desktop
+       - thumbMasterMb: Thumbnail lớn/master mobile
+       - meta_image: Ảnh SEO/OG khi share link
+
+    7. SEO (optional):
+       - meta_title: Tiêu đề SEO
+       - meta_keyword: Từ khóa SEO
+       - meta_description: Mô tả SEO
+
+    8. OTHER (optional):
+       - publishedAt: Ngày xuất bản (ISO date string)
+       - order_no: Thứ tự hiển thị (number)
+       - feature: Bài nổi bật (boolean)
+       - tags: Tags/nhãn
+
+    RULES:
+    - status defaults to 'DRAFT'. Only set 'PUBLISHED' when user explicitly asks.
+    - author_id auto-injected from AUTHOR_ID env if not provided.
+    - All image fields expect URL/path strings (use upload_image tool first)."""
     import json
+    import re
+    import unicodedata
     from config import AUTHOR_ID
     post_data = json.loads(data)
+    # Auto-generate slug from title_vn if not provided
+    if "slug" not in post_data and "title_vn" in post_data:
+        text = unicodedata.normalize("NFD", post_data["title_vn"])
+        text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+        text = re.sub(r"[đĐ]", "d", text)
+        text = re.sub(r"[^a-zA-Z0-9\s-]", "", text.lower())
+        post_data["slug"] = re.sub(r"[\s]+", "-", text.strip())
+    if "status" not in post_data:
+        post_data["status"] = "DRAFT"
     if AUTHOR_ID and "author_id" not in post_data:
         post_data["author_id"] = int(AUTHOR_ID)
     return await api("POST", "/admin/post", data=post_data)
@@ -193,6 +248,40 @@ async def update_page(page_id: str, data: str) -> dict[str, Any]:
     """Update a static page by ID. Pass data as JSON: {title, content, metaTitle, ...}"""
     import json
     return await api("PUT", f"/admin/pages/{page_id}", data=json.loads(data))
+
+
+# --- Upload ---
+
+@mcp.tool()
+async def upload_image(image_url: str) -> dict[str, Any]:
+    """Upload an image to XinChao platform by providing a public URL. Returns the uploaded image path to use in create_post/update_post image field.
+    The server downloads the image from the URL and uploads it to XinChao."""
+    import httpx
+    from config import API_URL, AUTHOR_ID
+    token = await _get_token_for_upload()
+    # Download image from URL
+    async with httpx.AsyncClient(timeout=30) as client:
+        img_resp = await client.get(image_url)
+        if img_resp.status_code >= 400:
+            return {"error": f"Cannot download image from {image_url}", "status": img_resp.status_code}
+        content_type = img_resp.headers.get("content-type", "image/jpeg")
+        ext = content_type.split("/")[-1].split(";")[0]
+        filename = f"upload.{ext}"
+        # Upload to XinChao
+        upload_resp = await client.post(
+            f"{API_URL}/admin/filemanagers/single",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": (filename, img_resp.content, content_type)},
+        )
+        if upload_resp.status_code >= 400:
+            return {"error": upload_resp.status_code, "message": upload_resp.text[:500]}
+        return upload_resp.json()
+
+
+async def _get_token_for_upload():
+    """Get token for upload — reuse from xinchao_api module."""
+    from xinchao_api import _get_token
+    return await _get_token()
 
 
 # --- Customers & Artists ---
