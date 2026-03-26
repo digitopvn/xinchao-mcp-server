@@ -53,10 +53,11 @@ async def update_show(show_id: str, data: str) -> dict[str, Any]:
     return await api("PUT", f"/admin/show/{show_id}", data=json.loads(data))
 
 
-@mcp.tool()
-async def delete_shows(ids: str) -> dict[str, Any]:
-    """Delete shows by comma-separated IDs (e.g. '1,2,3')."""
-    return await api("DELETE", "/admin/show", data={"ids": [int(i.strip()) for i in ids.split(",")]})
+# DELETE tools disabled for safety — uncomment when needed
+# @mcp.tool()
+# async def delete_shows(ids: str) -> dict[str, Any]:
+#     """Delete shows by comma-separated IDs (e.g. '1,2,3')."""
+#     return await api("DELETE", "/admin/show", data={"ids": [int(i.strip()) for i in ids.split(",")]})
 
 
 # --- Tickets ---
@@ -161,10 +162,10 @@ async def update_post(post_id: str, data: str) -> dict[str, Any]:
     return await api("PUT", f"/admin/post/{post_id}", data=json.loads(data))
 
 
-@mcp.tool()
-async def delete_posts(ids: str) -> dict[str, Any]:
-    """Delete posts by comma-separated IDs (e.g. '1,2,3')."""
-    return await api("DELETE", "/admin/post", data={"ids": [int(i.strip()) for i in ids.split(",")]})
+# @mcp.tool()
+# async def delete_posts(ids: str) -> dict[str, Any]:
+#     """Delete posts by comma-separated IDs (e.g. '1,2,3')."""
+#     return await api("DELETE", "/admin/post", data={"ids": [int(i.strip()) for i in ids.split(",")]})
 
 
 @mcp.tool()
