@@ -237,14 +237,20 @@ async def create_post(data: str) -> dict[str, Any]:
         post_data["status"] = "DRAFT"
     if AUTHOR_ID and "author_id" not in post_data:
         post_data["author_id"] = int(AUTHOR_ID)
+    # Auto-upload external URLs in image fields to CDN
+    post_data = await _auto_upload_image_fields(post_data)
     return await api("POST", "/admin/post", data=post_data)
 
 
 @mcp.tool()
 async def update_post(post_id: str, data: str) -> dict[str, Any]:
-    """Update a post by ID. Pass data as JSON string with fields to update."""
+    """Update a post by ID. Pass data as JSON string with fields to update.
+    External URLs in image fields are auto-uploaded to CDN before updating."""
     import json
-    return await api("PUT", f"/admin/post/{post_id}", data=json.loads(data))
+    post_data = json.loads(data)
+    # Auto-upload external URLs in image fields to CDN
+    post_data = await _auto_upload_image_fields(post_data)
+    return await api("PUT", f"/admin/post/{post_id}", data=post_data)
 
 
 # @mcp.tool()
@@ -280,32 +286,119 @@ async def update_page(page_id: str, data: str) -> dict[str, Any]:
     return await api("PUT", f"/admin/pages/{page_id}", data=json.loads(data))
 
 
-# --- Upload ---
+# --- Upload helpers ---
+
+_IMAGE_FIELDS = {"image", "imageMb", "thumbImage", "thumbImageMb", "thumbMaster", "thumbMasterMb", "meta_image"}
+
+_VALID_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp", "image/tiff"}
+
+
+def _is_external_url(value: str) -> bool:
+    """Check if value is an external URL (not a workspace/CDN relative path)."""
+    if not isinstance(value, str):
+        return False
+    return value.startswith("http://") or value.startswith("https://")
+
+
+async def _get_token_for_upload():
+    """Get valid token, auto re-login if expired."""
+    from xinchao_api import _get_token
+    return await _get_token()
+
+
+async def _download_image(url: str) -> dict[str, Any]:
+    """Download image from URL with validation and redirect support.
+    Returns {content, content_type, ext, filename} or {error}."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code >= 400:
+                return {"error": f"Cannot download image from {url} (status={resp.status_code})"}
+            content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+            if content_type not in _VALID_IMAGE_TYPES:
+                return {"error": f"URL returned non-image content-type: {content_type} (expected image/*). URL may be behind auth or redirect."}
+            if len(resp.content) < 100:
+                return {"error": f"Downloaded content too small ({len(resp.content)} bytes), likely not a valid image"}
+            ext = content_type.split("/")[-1]
+            if ext == "jpeg":
+                ext = "jpg"
+            elif ext == "svg+xml":
+                ext = "svg"
+            return {"content": resp.content, "content_type": content_type, "ext": ext}
+    except httpx.TimeoutException:
+        return {"error": f"Timeout downloading image from {url}"}
+    except httpx.HTTPError as e:
+        return {"error": f"HTTP error downloading image from {url}: {e}"}
+
+
+async def _upload_to_cdn(image_bytes: bytes, content_type: str, ext: str, filename_prefix: str = "upload") -> dict[str, Any]:
+    """Upload image bytes to XinChao CDN via /admin/filemanagers/single.
+    Returns API response with uploaded path, or {error}."""
+    import httpx
+    from config import API_URL
+    filename = f"{filename_prefix}.{ext}"
+    for attempt in range(2):
+        token = await _get_token_for_upload()
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{API_URL}/admin/filemanagers/single",
+                    headers={"Authorization": f"Bearer {token}"},
+                    files={"file": (filename, image_bytes, content_type)},
+                )
+            if resp.status_code == 401 and attempt == 0:
+                from xinchao_api import _token_cache
+                _token_cache["token"] = None
+                logger.info("Upload got 401, re-login and retry...")
+                continue
+            if resp.status_code >= 400:
+                return {"error": f"CDN upload failed (status={resp.status_code}): {resp.text[:500]}"}
+            return resp.json()
+        except httpx.TimeoutException:
+            return {"error": "Timeout uploading to CDN"}
+        except httpx.HTTPError as e:
+            return {"error": f"HTTP error uploading to CDN: {e}"}
+    return {"error": "Upload failed after retries"}
+
+
+async def _auto_upload_image_fields(data: dict) -> dict:
+    """For any image field containing an external URL, download and upload to CDN,
+    then replace the URL with the CDN path. Returns updated data dict."""
+    for field in _IMAGE_FIELDS:
+        value = data.get(field)
+        if not _is_external_url(value):
+            continue
+        logger.info("Auto-uploading %s from external URL: %s", field, value)
+        dl = await _download_image(value)
+        if "error" in dl:
+            logger.warning("Failed to download %s for field %s: %s", value, field, dl["error"])
+            continue
+        result = await _upload_to_cdn(dl["content"], dl["content_type"], dl["ext"], filename_prefix=field)
+        if "error" in result:
+            logger.warning("Failed to upload %s to CDN: %s", field, result["error"])
+            continue
+        # Extract CDN path from response
+        cdn_path = result.get("data", {}).get("filePath") or result.get("data", {}).get("path") or result.get("filePath") or result.get("path")
+        if cdn_path:
+            logger.info("Uploaded %s -> %s", field, cdn_path)
+            data[field] = cdn_path
+        else:
+            logger.warning("Upload succeeded but no path in response for %s: %s", field, result)
+    return data
+
+
+# --- Upload tools ---
 
 @mcp.tool()
 async def upload_image(image_url: str) -> dict[str, Any]:
-    """Upload an image to XinChao platform by providing a public URL. Returns the uploaded image path to use in create_post/update_post image field.
-    The server downloads the image from the URL and uploads it to XinChao."""
-    import httpx
-    from config import API_URL, AUTHOR_ID
-    token = await _get_token_for_upload()
-    # Download image from URL
-    async with httpx.AsyncClient(timeout=30) as client:
-        img_resp = await client.get(image_url)
-        if img_resp.status_code >= 400:
-            return {"error": f"Cannot download image from {image_url}", "status": img_resp.status_code}
-        content_type = img_resp.headers.get("content-type", "image/jpeg")
-        ext = content_type.split("/")[-1].split(";")[0]
-        filename = f"upload.{ext}"
-        # Upload to XinChao
-        upload_resp = await client.post(
-            f"{API_URL}/admin/filemanagers/single",
-            headers={"Authorization": f"Bearer {token}"},
-            files={"file": (filename, img_resp.content, content_type)},
-        )
-        if upload_resp.status_code >= 400:
-            return {"error": upload_resp.status_code, "message": upload_resp.text[:500]}
-        return upload_resp.json()
+    """Upload an image to XinChao CDN by providing a public URL.
+    Returns the uploaded image path (e.g. /uploads/xxx.jpg) to use in create_post/update_post image fields.
+    The server downloads the image from the URL, validates it, and uploads to CDN."""
+    dl = await _download_image(image_url)
+    if "error" in dl:
+        return dl
+    return await _upload_to_cdn(dl["content"], dl["content_type"], dl["ext"])
 
 
 @mcp.tool()
@@ -319,31 +412,32 @@ async def update_post_images(post_id: str, image_url: str, field: str = "image")
     Returns updated post data."""
     import httpx
     from config import API_URL
-    token = await _get_token_for_upload()
-    async with httpx.AsyncClient(timeout=60) as client:
-        # Download image from URL
-        img_resp = await client.get(image_url)
-        if img_resp.status_code >= 400:
-            return {"error": f"Cannot download image from {image_url}", "status": img_resp.status_code}
-        content_type = img_resp.headers.get("content-type", "image/jpeg")
-        ext = content_type.split("/")[-1].split(";")[0]
-        if ext == "jpeg": ext = "jpg"
-        filename = f"{field}.{ext}"
-        # Update post with multipart file upload — hasFile middleware handles R2 upload
-        upload_resp = await client.put(
-            f"{API_URL}/admin/post/{post_id}",
-            headers={"Authorization": f"Bearer {token}"},
-            files={field: (filename, img_resp.content, content_type)},
-        )
-        if upload_resp.status_code >= 400:
-            return {"error": upload_resp.status_code, "message": upload_resp.text[:500]}
-        return upload_resp.json()
-
-
-async def _get_token_for_upload():
-    """Get token for upload — reuse from xinchao_api module."""
-    from xinchao_api import _get_token
-    return await _get_token()
+    dl = await _download_image(image_url)
+    if "error" in dl:
+        return dl
+    filename = f"{field}.{dl['ext']}"
+    for attempt in range(2):
+        token = await _get_token_for_upload()
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.put(
+                    f"{API_URL}/admin/post/{post_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    files={field: (filename, dl["content"], dl["content_type"])},
+                )
+            if resp.status_code == 401 and attempt == 0:
+                from xinchao_api import _token_cache
+                _token_cache["token"] = None
+                logger.info("update_post_images got 401, re-login and retry...")
+                continue
+            if resp.status_code >= 400:
+                return {"error": resp.status_code, "message": resp.text[:500]}
+            return resp.json()
+        except httpx.TimeoutException:
+            return {"error": "Timeout uploading to post"}
+        except httpx.HTTPError as e:
+            return {"error": f"HTTP error: {e}"}
+    return {"error": "Upload failed after retries"}
 
 
 # --- Customers & Artists ---
