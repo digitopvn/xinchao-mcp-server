@@ -301,6 +301,35 @@ async def upload_image(image_url: str) -> dict[str, Any]:
         return upload_resp.json()
 
 
+@mcp.tool()
+async def upload_image_base64(image_base64: str, filename: str = "upload.jpg") -> dict[str, Any]:
+    """Upload an image to XinChao using base64-encoded data. Use when image is a local file in GoClaw workspace:
+    1. Agent runs: exec('base64 -w0 /path/to/image.jpg') to get base64 string
+    2. Pass that base64 string here
+    Returns the uploaded image path for use in create_post image fields."""
+    import base64
+    import httpx
+    from config import API_URL
+    token = await _get_token_for_upload()
+    try:
+        image_bytes = base64.b64decode(image_base64)
+    except Exception:
+        return {"error": "Invalid base64 data"}
+    # Detect content type from filename
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    ct_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp"}
+    content_type = ct_map.get(ext, "image/jpeg")
+    async with httpx.AsyncClient(timeout=30) as client:
+        upload_resp = await client.post(
+            f"{API_URL}/admin/filemanagers/single",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": (filename, image_bytes, content_type)},
+        )
+        if upload_resp.status_code >= 400:
+            return {"error": upload_resp.status_code, "message": upload_resp.text[:500]}
+        return upload_resp.json()
+
+
 async def _get_token_for_upload():
     """Get token for upload — reuse from xinchao_api module."""
     from xinchao_api import _get_token
