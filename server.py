@@ -15,9 +15,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
+VERSION = "1.2.0"
+BUILD_DATE = "2026-03-26"
+
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
     enable_dns_rebinding_protection=False
 ))
+
+
+# --- Info ---
+
+@mcp.tool()
+async def server_info() -> dict[str, Any]:
+    """Get XinChao MCP server version and status. Use this to verify the server is running the latest version."""
+    from config import API_URL, AUTHOR_ID
+    return {
+        "version": VERSION,
+        "build_date": BUILD_DATE,
+        "api_url": API_URL,
+        "author_id_configured": bool(AUTHOR_ID),
+    }
 
 
 # --- Shows ---
