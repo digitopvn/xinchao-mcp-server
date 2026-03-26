@@ -167,30 +167,35 @@ async def create_post(data: str) -> dict[str, Any]:
     5. CATEGORY (required):
        - post_category_id: number — use list_post_categories to find ID
 
-    6. IMAGES (optional — use upload_image tool first to get paths):
-       - image: Ảnh banner chính desktop
-       - imageMb: Ảnh banner mobile
-       - thumbImage: Thumbnail nhỏ desktop
-       - thumbImageMb: Thumbnail nhỏ mobile
-       - thumbMaster: Thumbnail lớn/master desktop
-       - thumbMasterMb: Thumbnail lớn/master mobile
-       - meta_image: Ảnh SEO/OG khi share link
+    6. IMAGES — ask user for each (không bắt buộc, bỏ qua nếu không cần):
+       - image: Ảnh banner chính desktop (không bắt buộc)
+       - imageMb: Ảnh banner mobile (không bắt buộc)
+       - thumbImage: Thumbnail nhỏ desktop (không bắt buộc)
+       - thumbImageMb: Thumbnail nhỏ mobile (không bắt buộc)
+       - thumbMaster: Thumbnail lớn/master desktop (không bắt buộc)
+       - thumbMasterMb: Thumbnail lớn/master mobile (không bắt buộc)
+       - meta_image: Ảnh SEO/OG khi share link (không bắt buộc)
+       Use upload_image tool to upload from URL first, then use returned path.
 
-    7. SEO (optional):
-       - meta_title: Tiêu đề SEO
-       - meta_keyword: Từ khóa SEO
-       - meta_description: Mô tả SEO
+    7. SEO — ask user for each (không bắt buộc, bỏ qua nếu không cần):
+       - meta_title: Tiêu đề SEO (không bắt buộc)
+       - meta_keyword: Từ khóa SEO, comma-separated (không bắt buộc)
+       - meta_description: Mô tả SEO (không bắt buộc)
 
-    8. OTHER (optional):
-       - publishedAt: Ngày xuất bản (ISO date string)
-       - order_no: Thứ tự hiển thị (number)
-       - feature: Bài nổi bật (boolean)
-       - tags: Tags/nhãn
+    8. OTHER — ask user for each (không bắt buộc, bỏ qua nếu không cần):
+       - publishedAt: Ngày xuất bản, ISO date e.g. "2026-03-26" (không bắt buộc)
+       - order_no: Thứ tự hiển thị, number (không bắt buộc)
+       - feature: Bài nổi bật, true/false (không bắt buộc)
+       - tags: Tags/nhãn, array (không bắt buộc)
+
+    IMPORTANT: Ask user about ALL sections above step by step. For optional fields, note "(không bắt buộc, bỏ qua nếu không cần)" so user knows they can skip.
 
     RULES:
-    - status defaults to 'DRAFT'. Only set 'PUBLISHED' when user explicitly asks.
-    - author_id auto-injected from AUTHOR_ID env if not provided.
-    - All image fields expect URL/path strings (use upload_image tool first)."""
+    - status: only 'DRAFT' or 'PUBLISHED' (uppercase). Defaults to 'DRAFT'. Only set 'PUBLISHED' when user explicitly asks to publish.
+    - slug: auto-generated from title_vn if not provided. Do NOT ask user for slug.
+    - author_id: auto-injected from AUTHOR_ID env if not provided. Do NOT ask user for author_id.
+    - image fields: expect URL/path strings (use upload_image tool first to upload images).
+    - Do NOT ask user for fields that are auto-generated or have defaults."""
     import json
     import re
     import unicodedata
