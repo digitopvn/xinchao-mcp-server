@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 BUILD_DATE = "2026-03-26"
 
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
@@ -313,8 +313,9 @@ async def _download_image(url: str) -> dict[str, Any]:
     Returns {content, content_type, ext, filename} or {error}."""
     import httpx
     try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) XinChaoMCP/1.3.0"}
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=headers)
             if resp.status_code >= 400:
                 return {"error": f"Cannot download image from {url} (status={resp.status_code})"}
             content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
@@ -364,9 +365,27 @@ async def _upload_to_cdn(image_bytes: bytes, content_type: str, ext: str, filena
     return {"error": "Upload failed after retries"}
 
 
+def _extract_cdn_path(result: dict) -> str | None:
+    """Extract CDN path from upload API response, trying all known key patterns."""
+    # Try nested: {data: {filePath, path, url, file, ...}}
+    d = result.get("data", {})
+    if isinstance(d, dict):
+        for key in ("filePath", "path", "url", "file", "src", "fileUrl", "file_path", "file_url"):
+            val = d.get(key)
+            if val and isinstance(val, str):
+                return val
+    # Try flat: {filePath, path, url, ...}
+    for key in ("filePath", "path", "url", "file", "src", "fileUrl", "file_path", "file_url"):
+        val = result.get(key)
+        if val and isinstance(val, str):
+            return val
+    return None
+
+
 async def _auto_upload_image_fields(data: dict) -> dict:
     """For any image field containing an external URL, download and upload to CDN,
-    then replace the URL with the CDN path. Returns updated data dict."""
+    then replace the URL with the CDN path. Returns updated data dict.
+    CRITICAL: If upload fails, REMOVE the external URL to prevent broken CDN links."""
     for field in _IMAGE_FIELDS:
         value = data.get(field)
         if not _is_external_url(value):
@@ -374,19 +393,23 @@ async def _auto_upload_image_fields(data: dict) -> dict:
         logger.info("Auto-uploading %s from external URL: %s", field, value)
         dl = await _download_image(value)
         if "error" in dl:
-            logger.warning("Failed to download %s for field %s: %s", value, field, dl["error"])
+            logger.warning("Failed to download %s for field %s: %s — REMOVING field to prevent broken URL", value, field, dl["error"])
+            del data[field]  # REMOVE to prevent https://cdn.gotest.apphttps://... broken URL
             continue
         result = await _upload_to_cdn(dl["content"], dl["content_type"], dl["ext"], filename_prefix=field)
         if "error" in result:
-            logger.warning("Failed to upload %s to CDN: %s", field, result["error"])
+            logger.warning("Failed to upload %s to CDN: %s — REMOVING field to prevent broken URL", field, result["error"])
+            del data[field]  # REMOVE to prevent broken URL
             continue
-        # Extract CDN path from response
-        cdn_path = result.get("data", {}).get("filePath") or result.get("data", {}).get("path") or result.get("filePath") or result.get("path")
+        # Extract CDN path from response — try all known key patterns
+        logger.info("CDN upload response for %s: %s", field, result)
+        cdn_path = _extract_cdn_path(result)
         if cdn_path:
             logger.info("Uploaded %s -> %s", field, cdn_path)
             data[field] = cdn_path
         else:
-            logger.warning("Upload succeeded but no path in response for %s: %s", field, result)
+            logger.error("Upload succeeded but CANNOT find path in response for %s: %s — REMOVING field", field, result)
+            del data[field]  # REMOVE to prevent broken URL
     return data
 
 
