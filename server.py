@@ -184,7 +184,10 @@ async def create_post(data: str) -> dict[str, Any]:
     5. CATEGORY (required):
        - post_category_id: number — use list_post_categories to find ID
 
-    6. IMAGES — ask user for each (không bắt buộc, bỏ qua nếu không cần):
+    6. PUBLISHED DATE (required):
+       - publishedAt: Ngày xuất bản, format dd/mm/yyyy (e.g. "26/03/2026"). Server auto-converts to ISO date.
+
+    7. IMAGES — ask user for each (không bắt buộc, bỏ qua nếu không cần):
        - image: Ảnh banner chính desktop (không bắt buộc)
        - imageMb: Ảnh banner mobile (không bắt buộc)
        - thumbImage: Thumbnail nhỏ desktop (không bắt buộc)
@@ -195,13 +198,12 @@ async def create_post(data: str) -> dict[str, Any]:
        For workspace files: pass path directly (e.g. /app/workspace/.../image.jpg)
        For external images: use upload_image tool with public URL first, then use returned path.
 
-    7. SEO — ask user for each (không bắt buộc, bỏ qua nếu không cần):
+    8. SEO — ask user for each (không bắt buộc, bỏ qua nếu không cần):
        - meta_title: Tiêu đề SEO (không bắt buộc)
        - meta_keyword: Từ khóa SEO, comma-separated (không bắt buộc)
        - meta_description: Mô tả SEO (không bắt buộc)
 
-    8. OTHER — ask user for each (không bắt buộc, bỏ qua nếu không cần):
-       - publishedAt: Ngày xuất bản, ISO date e.g. "2026-03-26" (không bắt buộc)
+    9. OTHER — ask user for each (không bắt buộc, bỏ qua nếu không cần):
        - order_no: Thứ tự hiển thị, number (không bắt buộc)
        - feature: Bài nổi bật, true/false (không bắt buộc)
        - tags: Tags/nhãn, array (không bắt buộc)
@@ -226,6 +228,11 @@ async def create_post(data: str) -> dict[str, Any]:
         text = re.sub(r"[đĐ]", "d", text)
         text = re.sub(r"[^a-zA-Z0-9\s-]", "", text.lower())
         post_data["slug"] = re.sub(r"[\s]+", "-", text.strip())
+    # Convert dd/mm/yyyy to ISO date for publishedAt
+    if "publishedAt" in post_data and "/" in str(post_data["publishedAt"]):
+        parts = post_data["publishedAt"].split("/")
+        if len(parts) == 3:
+            post_data["publishedAt"] = f"{parts[2]}-{parts[1]}-{parts[0]}"
     if "status" not in post_data:
         post_data["status"] = "DRAFT"
     if AUTHOR_ID and "author_id" not in post_data:
