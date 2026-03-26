@@ -302,28 +302,31 @@ async def upload_image(image_url: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def upload_image_base64(image_base64: str, filename: str = "upload.jpg") -> dict[str, Any]:
-    """Upload an image to XinChao using base64-encoded data. Use when image is a local file in GoClaw workspace:
-    1. Agent runs: exec('base64 -w0 /path/to/image.jpg') to get base64 string
-    2. Pass that base64 string here
-    Returns the uploaded image path for use in create_post image fields."""
-    import base64
+async def update_post_images(post_id: str, image_url: str, field: str = "image") -> dict[str, Any]:
+    """Upload an image and attach it to a post via multipart form update.
+    API uploads to Cloudflare R2 automatically.
+    Args:
+        post_id: Post ID to update
+        image_url: Public URL of the image to download and attach
+        field: Image field name (image, imageMb, thumbImage, thumbImageMb, thumbMaster, thumbMasterMb, meta_image)
+    Returns updated post data."""
     import httpx
     from config import API_URL
     token = await _get_token_for_upload()
-    try:
-        image_bytes = base64.b64decode(image_base64)
-    except Exception:
-        return {"error": "Invalid base64 data"}
-    # Detect content type from filename
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
-    ct_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp"}
-    content_type = ct_map.get(ext, "image/jpeg")
-    async with httpx.AsyncClient(timeout=30) as client:
-        upload_resp = await client.post(
-            f"{API_URL}/admin/filemanagers/single",
+    async with httpx.AsyncClient(timeout=60) as client:
+        # Download image from URL
+        img_resp = await client.get(image_url)
+        if img_resp.status_code >= 400:
+            return {"error": f"Cannot download image from {image_url}", "status": img_resp.status_code}
+        content_type = img_resp.headers.get("content-type", "image/jpeg")
+        ext = content_type.split("/")[-1].split(";")[0]
+        if ext == "jpeg": ext = "jpg"
+        filename = f"{field}.{ext}"
+        # Update post with multipart file upload — hasFile middleware handles R2 upload
+        upload_resp = await client.put(
+            f"{API_URL}/admin/post/{post_id}",
             headers={"Authorization": f"Bearer {token}"},
-            files={"file": (filename, image_bytes, content_type)},
+            files={field: (filename, img_resp.content, content_type)},
         )
         if upload_resp.status_code >= 400:
             return {"error": upload_resp.status_code, "message": upload_resp.text[:500]}
