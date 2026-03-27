@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("xinchao-mcp")
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 BUILD_DATE = "2026-03-26"
 
 mcp = FastMCP("XinChaoMCP", transport_security=TransportSecuritySettings(
@@ -418,6 +418,50 @@ async def update_tag(tag_id: str, data: str) -> dict[str, Any]:
     """Update a tag by ID. Pass data as JSON with fields to update."""
     import json
     return await api("PUT", f"/admin/tag/{tag_id}", data=json.loads(data))
+
+
+# --- Shows ---
+
+@mcp.tool()
+async def list_shows(page: str = "1", limit: str = "10", keyword: str = "") -> dict[str, Any]:
+    """List all shows with pagination and search."""
+    params = {"page": page, "limit": limit}
+    if keyword: params["keyword"] = keyword
+    return await api("GET", "/admin/show", params=params)
+
+
+@mcp.tool()
+async def get_show(show_id: str) -> dict[str, Any]:
+    """Get details of a specific show by ID."""
+    return await api("GET", f"/admin/show/{show_id}")
+
+
+@mcp.tool()
+async def create_show(data: str) -> dict[str, Any]:
+    """Create a new show. Pass data as JSON string."""
+    import json
+    return await api("POST", "/admin/show", data=json.loads(data))
+
+
+@mcp.tool()
+async def update_show(show_id: str, data: str) -> dict[str, Any]:
+    """Update a show by ID. Pass data as JSON string with fields to update."""
+    import json
+    return await api("PUT", f"/admin/show/{show_id}", data=json.loads(data))
+
+
+# --- Show Categories ---
+
+@mcp.tool()
+async def list_show_categories(page: str = "1", limit: str = "10") -> dict[str, Any]:
+    """List all show categories."""
+    return await api("GET", "/admin/show-category", params={"page": page, "limit": limit})
+
+
+@mcp.tool()
+async def get_show_category(category_id: str) -> dict[str, Any]:
+    """Get details of a specific show category by ID."""
+    return await api("GET", f"/admin/show-category/{category_id}")
 
 
 # --- Entry point ---
