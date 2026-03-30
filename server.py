@@ -207,8 +207,17 @@ async def update_page(page_id: str, data: str) -> dict[str, Any]:
 @mcp.tool()
 async def upload_image(image_url: str) -> dict[str, Any]:
     """Upload an image to XinChao CDN by providing a public URL.
-    Returns the uploaded image path (e.g. /uploads/xxx.jpg) to use in create_post/update_post image fields.
-    The server downloads the image from the URL, validates it, and uploads to CDN."""
+    Returns the uploaded image path to use in create_post/update_post image fields.
+    The server downloads the image from the URL, validates it, and uploads to CDN.
+
+    IMPORTANT FOR DISCORD BOTS:
+    When a user sends an image via Discord, the attachment already has a public URL like:
+    https://cdn.discordapp.com/attachments/...
+    Just pass that Discord attachment URL directly to this tool — NO need to create http servers
+    or any workarounds. The URL is valid for several minutes, enough for download + CDN upload.
+
+    DO NOT run shell commands like 'python3 -m http.server' to serve files.
+    DO NOT create temporary HTTP servers. Just use the attachment URL directly."""
     dl = await _download_image(image_url)
     if "error" in dl:
         return dl
