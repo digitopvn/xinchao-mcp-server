@@ -95,10 +95,26 @@ async def _upload_to_cdn(image_bytes: bytes, content_type: str, ext: str, filena
     return {"error": "Upload failed after retries"}
 
 
+def _strip_cdn_domain(path: str) -> str:
+    """Strip CDN domain prefix from URL, return relative path only.
+    XinChao frontend prepends its own CDN base URL, so we must store relative paths.
+    e.g. 'https://cdn.gotest.app/prod_xinchao_2024/files/...' → '/prod_xinchao_2024/files/...'"""
+    if not path:
+        return path
+    # If it's already a relative path, return as-is
+    if not path.startswith("http://") and not path.startswith("https://"):
+        return path
+    # Strip scheme + domain, keep path
+    from urllib.parse import urlparse
+    parsed = urlparse(path)
+    return parsed.path
+
+
 def _extract_cdn_path(result: dict) -> str | None:
     """Extract CDN path from /admin/filemanagers/single response.
     CKEditor SimpleUploadAdapter expects {url: "..."} or {urls: {default: "..."}}.
-    Backend may also wrap in {metadata: {...}} or {data: {...}}."""
+    Backend may also wrap in {metadata: {...}} or {data: {...}}.
+    Always returns a relative path (strips CDN domain if present)."""
     search_keys = ("url", "filePath", "path", "file_key", "key", "file", "src", "fileUrl", "file_path", "file_url")
 
     # Try nested: data.X, metadata.X
@@ -108,21 +124,21 @@ def _extract_cdn_path(result: dict) -> str | None:
             for key in search_keys:
                 val = d.get(key)
                 if val and isinstance(val, str):
-                    return val
+                    return _strip_cdn_domain(val)
             # CKEditor format: {urls: {default: "..."}}
             urls = d.get("urls")
             if isinstance(urls, dict) and urls.get("default"):
-                return urls["default"]
+                return _strip_cdn_domain(urls["default"])
 
     # Try flat
     for key in search_keys:
         val = result.get(key)
         if val and isinstance(val, str):
-            return val
+            return _strip_cdn_domain(val)
     # CKEditor format at top level
     urls = result.get("urls")
     if isinstance(urls, dict) and urls.get("default"):
-        return urls["default"]
+        return _strip_cdn_domain(urls["default"])
     return None
 
 
